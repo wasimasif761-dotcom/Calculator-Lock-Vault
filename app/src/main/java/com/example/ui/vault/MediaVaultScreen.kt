@@ -1,5 +1,7 @@
 package com.example.ui.vault
 
+import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,7 +68,7 @@ fun MediaVaultScreen(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri ->
-                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "imported_media_${System.currentTimeMillis()}"
+                val fileName = getRealDisplayName(context, uri)
                 repository.addMedia(
                     title = fileName,
                     type = selectedTab,
@@ -84,7 +86,7 @@ fun MediaVaultScreen(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri ->
-                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document_${System.currentTimeMillis()}"
+                val fileName = getRealDisplayName(context, uri)
                 repository.addMedia(
                     title = fileName,
                     type = MediaType.FILE,
@@ -280,122 +282,27 @@ fun MediaVaultScreen(
         }
     }
 
-    // Fullscreen Media Viewer Dialog
+    // Fullscreen Real Media Viewer (Native Video Player & Zoomable Photo Viewer)
     viewingMedia?.let { media ->
-        Dialog(onDismissRequest = { viewingMedia = null }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-                    .testTag("media_viewer_dialog"),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF181E29))
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = media.title,
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = { viewingMedia = null }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Media preview Box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF0F172A)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (media.localUri != null) {
-                            AsyncImage(
-                                model = if (media.localUri.startsWith("/")) File(media.localUri) else Uri.parse(media.localUri),
-                                contentDescription = media.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = when (media.type) {
-                                        MediaType.PHOTO -> Icons.Default.Image
-                                        MediaType.VIDEO -> Icons.Default.PlayCircle
-                                        MediaType.FILE -> Icons.Default.InsertDriveFile
-                                    },
-                                    contentDescription = null,
-                                    tint = Color(0xFF3B82F6),
-                                    modifier = Modifier.size(56.dp)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Encrypted Vault Content",
-                                    color = Color(0xFF93C5FD),
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        // Unhide / Restore button
-                        OutlinedButton(
-                            onClick = {
-                                val ok = repository.unhideMediaToGallery(media.id)
-                                if (ok) {
-                                    Toast.makeText(context, "Restored to Phone Gallery!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    repository.restoreMedia(media.id)
-                                    Toast.makeText(context, "Item restored.", Toast.LENGTH_SHORT).show()
-                                }
-                                viewingMedia = null
-                            },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.LockOpen, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Unhide to Gallery", color = Color(0xFF60A5FA))
-                        }
-
-                        // Delete button
-                        Button(
-                            onClick = {
-                                repository.permanentlyDeleteMedia(media.id)
-                                Toast.makeText(context, "Permanently deleted from Vault", Toast.LENGTH_SHORT).show()
-                                viewingMedia = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Delete", color = Color.White)
-                        }
-                    }
+        VaultMediaViewer(
+            media = media,
+            onDismiss = { viewingMedia = null },
+            onUnhide = {
+                val ok = repository.unhideMediaToGallery(media.id)
+                if (ok) {
+                    Toast.makeText(context, "Restored to Phone Gallery!", Toast.LENGTH_SHORT).show()
+                } else {
+                    repository.restoreMedia(media.id)
+                    Toast.makeText(context, "Item restored.", Toast.LENGTH_SHORT).show()
                 }
+                viewingMedia = null
+            },
+            onDelete = {
+                repository.permanentlyDeleteMedia(media.id)
+                Toast.makeText(context, "Permanently deleted from Vault", Toast.LENGTH_SHORT).show()
+                viewingMedia = null
             }
-        }
+        )
     }
 
     // Dialog asking to delete original from phone gallery so it is 100% hidden
@@ -542,4 +449,30 @@ fun MediaVaultItemTile(
             }
         }
     }
+}
+
+fun getRealDisplayName(context: Context, uri: Uri): String {
+    var displayName: String? = null
+    if (uri.scheme == "content") {
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        displayName = cursor.getString(idx)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    if (displayName == null) {
+        val path = uri.path
+        val cut = path?.lastIndexOf('/')
+        if (cut != null && cut != -1) {
+            displayName = path.substring(cut + 1)
+        }
+    }
+    return displayName ?: "media_${System.currentTimeMillis()}"
 }

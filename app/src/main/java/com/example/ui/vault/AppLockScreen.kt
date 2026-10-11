@@ -37,9 +37,19 @@ fun AppLockScreen(
     repository: VaultRepository,
     onNavigateBack: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val apps by repository.lockedApps.collectAsState()
     val savedPin by repository.passcode.collectAsState()
     var simulatingAppLockFor by remember { mutableStateOf<LockableApp?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    val isServiceActive = remember { com.example.service.AppLockAccessibilityService.isAccessibilityEnabled(context) }
+
+    val filteredApps = remember(apps, searchQuery) {
+        if (searchQuery.isBlank()) apps else apps.filter {
+            it.appName.contains(searchQuery, ignoreCase = true) ||
+            it.packageName.contains(searchQuery, ignoreCase = true)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -122,6 +132,89 @@ fun AppLockScreen(
                 }
             }
 
+            // Real System Accessibility Service Status Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isServiceActive) Color(0xFF064E3B) else Color(0xFF2E241E)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = if (isServiceActive) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = if (isServiceActive) Color(0xFF34D399) else Color(0xFFFBBF24),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (isServiceActive) "App Lock Service: ACTIVE" else "Real Interception Service: OFF",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    text = if (isServiceActive) "Protecting phone apps in real-time" else "Tap to turn on in Android Settings",
+                                    color = Color(0xFFCBD5E1),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        if (!isServiceActive) {
+                            Button(
+                                onClick = {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("Turn On", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Search Bar for all installed apps
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search any app to lock...", color = Color(0xFF6B7280), fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF9CA3AF)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.White)
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF10B981),
+                        unfocusedBorderColor = Color(0xFF2E384D),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    )
+                )
+            }
+
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -129,7 +222,7 @@ fun AppLockScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Protected Applications",
+                        text = "Protected Applications (${filteredApps.size})",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -142,7 +235,7 @@ fun AppLockScreen(
                 }
             }
 
-            items(apps) { app ->
+            items(filteredApps, key = { it.packageName }) { app ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()

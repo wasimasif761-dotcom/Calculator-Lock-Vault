@@ -66,6 +66,13 @@ data class VaultDownload(
         get() = if (totalBytes > 0) (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
 }
 
+data class BrowserHistoryItem(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val url: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class SubscriptionPlan(
     val id: String,
     val title: String,
