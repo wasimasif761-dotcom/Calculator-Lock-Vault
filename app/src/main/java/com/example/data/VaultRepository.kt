@@ -1,8 +1,21 @@
 package com.example.data
 
+import android.Manifest
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.PowerManager
+import android.provider.ContactsContract
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import android.app.PendingIntent
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.provider.MediaStore
 import com.example.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +65,9 @@ class VaultRepository(private val context: Context) {
 
     private val _downloads = MutableStateFlow<List<VaultDownload>>(emptyList())
     val downloads: StateFlow<List<VaultDownload>> = _downloads.asStateFlow()
+
+    private val _contacts = MutableStateFlow<List<VaultContact>>(emptyList())
+    val contacts: StateFlow<List<VaultContact>> = _contacts.asStateFlow()
 
     // Google Account & Cloud Backup State
     private val _userProfile = MutableStateFlow(
@@ -235,6 +251,47 @@ class VaultRepository(private val context: Context) {
             )
         )
         _downloads.value = initialDownloads
+
+        // Seed default confidential contacts
+        val initialContacts = listOf(
+            VaultContact(
+                id = "contact_dev_waseem",
+                name = "Waseem Asif (Developer)",
+                phoneNumber = "+966597447275",
+                email = "wasimasif761@gmail.com",
+                notes = "Official Developer & Privacy Architect. Reachable via WhatsApp & Email.",
+                isHidden = true,
+                avatarColorHex = 0xFF2563EB
+            ),
+            VaultContact(
+                id = "contact_confidential_legal",
+                name = "Confidential Attorney",
+                phoneNumber = "+1555019982",
+                email = "legal.priv@vault.sec",
+                notes = "Emergency legal council & NDA agreement coordinator.",
+                isHidden = true,
+                avatarColorHex = 0xFF10B981
+            ),
+            VaultContact(
+                id = "contact_swiss_banker",
+                name = "Private Swiss Banker",
+                phoneNumber = "+41228190000",
+                email = "wealth.swiss@offshore.ch",
+                notes = "Account manager. Safe verification code: WHISPER-99.",
+                isHidden = true,
+                avatarColorHex = 0xFF8B5CF6
+            ),
+            VaultContact(
+                id = "contact_emergency_safehouse",
+                name = "Safehouse Protocol Line",
+                phoneNumber = "+442079460912",
+                email = "protocol@safehouse.net",
+                notes = "Priority contact for emergency data wipes.",
+                isHidden = true,
+                avatarColorHex = 0xFFF59E0B
+            )
+        )
+        _contacts.value = initialContacts
     }
 
     // Setup Actions
@@ -292,6 +349,110 @@ class VaultRepository(private val context: Context) {
         return item
     }
 
+    fun addMediaFromBitmap(title: String, bitmap: Bitmap): VaultMedia {
+        var localPath: String? = null
+        var sizeBytes = 0L
+        try {
+            val vaultDir = File(context.filesDir, "vault_media")
+            if (!vaultDir.exists()) vaultDir.mkdirs()
+            val destFile = File(vaultDir, "${UUID.randomUUID()}_$title.jpg")
+            FileOutputStream(destFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+            localPath = destFile.absolutePath
+            sizeBytes = destFile.length()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        val item = VaultMedia(
+            title = title,
+            type = MediaType.PHOTO,
+            localUri = localPath,
+            sizeBytes = sizeBytes
+        )
+        _mediaItems.value = listOf(item) + _mediaItems.value
+        return item
+    }
+
+    fun unhideMediaToGallery(mediaId: String): Boolean {
+        val item = _mediaItems.value.firstOrNull { it.id == mediaId } ?: return false
+        val path = item.localUri ?: return false
+        return try {
+            val srcFile = File(path)
+            if (!srcFile.exists()) return false
+
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, item.title)
+                if (item.type == MediaType.PHOTO) {
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Restored_Vault")
+                    }
+                } else if (item.type == MediaType.VIDEO) {
+                    put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Restored_Vault")
+                    }
+                } else {
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Restored_Vault")
+                    }
+                }
+            }
+
+            val collectionUri = when (item.type) {
+                MediaType.PHOTO -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                MediaType.VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                } else {
+                    MediaStore.Files.getContentUri("external")
+                }
+            }
+
+            val newUri = context.contentResolver.insert(collectionUri, values)
+            if (newUri != null) {
+                context.contentResolver.openOutputStream(newUri)?.use { out ->
+                    srcFile.inputStream().use { inp ->
+                        inp.copyTo(out)
+                    }
+                }
+                srcFile.delete()
+                _mediaItems.value = _mediaItems.value.filter { it.id != mediaId }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun deleteOriginalFromPhone(uri: Uri): PendingIntent? {
+        try {
+            val rows = context.contentResolver.delete(uri, null, null)
+            if (rows > 0) return null
+        } catch (sec: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    return MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                return MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return null
+    }
+
     fun deleteMedia(id: String) {
         _mediaItems.value = _mediaItems.value.map {
             if (it.id == id) it.copy(isDeleted = true) else it
@@ -305,6 +466,15 @@ class VaultRepository(private val context: Context) {
     }
 
     fun permanentlyDeleteMedia(id: String) {
+        val item = _mediaItems.value.firstOrNull { it.id == id }
+        item?.localUri?.let { path ->
+            try {
+                val f = File(path)
+                if (f.exists()) f.delete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         _mediaItems.value = _mediaItems.value.filter { it.id != id }
     }
 
@@ -470,5 +640,235 @@ class VaultRepository(private val context: Context) {
         _hasStoragePermission.value = false
         _passcode.value = "1234"
         _isPremium.value = false
+    }
+
+    // Contacts Vault Actions
+    fun addContact(
+        name: String,
+        phoneNumber: String,
+        email: String = "",
+        notes: String = "",
+        isHidden: Boolean = true,
+        avatarColorHex: Long = 0xFF2563EB
+    ): VaultContact {
+        val newContact = VaultContact(
+            name = name,
+            phoneNumber = phoneNumber,
+            email = email,
+            notes = notes,
+            isHidden = isHidden,
+            avatarColorHex = avatarColorHex
+        )
+        _contacts.value = listOf(newContact) + _contacts.value
+        return newContact
+    }
+
+    fun updateContact(
+        id: String,
+        name: String,
+        phoneNumber: String,
+        email: String,
+        notes: String
+    ) {
+        _contacts.value = _contacts.value.map {
+            if (it.id == id) it.copy(
+                name = name,
+                phoneNumber = phoneNumber,
+                email = email,
+                notes = notes
+            ) else it
+        }
+    }
+
+    fun deleteContact(id: String) {
+        _contacts.value = _contacts.value.filter { it.id != id }
+    }
+
+    fun importDeviceContacts(ctx: Context): Int {
+        val importedList = mutableListOf<VaultContact>()
+        try {
+            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                val cursor = ctx.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    ),
+                    null,
+                    null,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+                )
+                cursor?.use {
+                    val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val numberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    var count = 0
+                    while (it.moveToNext() && count < 100) {
+                        val name = if (nameIndex != -1) it.getString(nameIndex) ?: "Contact" else "Contact"
+                        val number = if (numberIndex != -1) it.getString(numberIndex) ?: "" else ""
+                        val cleanNum = number.replace(" ", "").replace("-", "")
+                        if (cleanNum.isNotBlank() && _contacts.value.none { c -> c.phoneNumber.replace(" ", "") == cleanNum }) {
+                            importedList.add(
+                                VaultContact(
+                                    name = name,
+                                    phoneNumber = number,
+                                    notes = "Imported from device phonebook"
+                                )
+                            )
+                            count++
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        if (importedList.isNotEmpty()) {
+            _contacts.value = importedList + _contacts.value
+        }
+        return importedList.size
+    }
+
+    // Permission Diagnostics
+    fun checkPermissionsStatus(ctx: Context): List<SystemPermissionItem> {
+        val list = mutableListOf<SystemPermissionItem>()
+
+        // 1. Photos & Media Storage
+        val hasMedia = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+        list.add(
+            SystemPermissionItem(
+                id = "perm_media",
+                title = "Photos & Media Storage",
+                description = "Required to hide photos, encrypt videos, and protect public gallery files.",
+                iconName = "PhotoLibrary",
+                isGranted = hasMedia,
+                isDangerousRuntime = true,
+                permissionManifestName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_IMAGES
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }
+            )
+        )
+
+        // 2. All Files Access (Deep storage)
+        val hasAllFiles = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            hasMedia
+        }
+        list.add(
+            SystemPermissionItem(
+                id = "perm_all_files",
+                title = "All Files Access",
+                description = "Deep access to hide and delete files from device SD and internal storage.",
+                iconName = "FolderSpecial",
+                isGranted = hasAllFiles,
+                isDangerousRuntime = false,
+                settingsAction = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+                } else null
+            )
+        )
+
+        // 3. Contacts
+        val hasContacts = ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        list.add(
+            SystemPermissionItem(
+                id = "perm_contacts",
+                title = "Contacts & Phonebook",
+                description = "Required to sync, backup, and store private secret contacts in the vault.",
+                iconName = "Contacts",
+                isGranted = hasContacts,
+                isDangerousRuntime = true,
+                permissionManifestName = Manifest.permission.READ_CONTACTS
+            )
+        )
+
+        // 4. Camera
+        val hasCamera = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        list.add(
+            SystemPermissionItem(
+                id = "perm_camera",
+                title = "Camera Access",
+                description = "Required for Intruder Selfie when someone enters wrong PIN & stealth photos.",
+                iconName = "CameraAlt",
+                isGranted = hasCamera,
+                isDangerousRuntime = true,
+                permissionManifestName = Manifest.permission.CAMERA
+            )
+        )
+
+        // 5. Notifications
+        val hasNotif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else true
+        list.add(
+            SystemPermissionItem(
+                id = "perm_notifications",
+                title = "Push Notifications & Alerts",
+                description = "Required for security alerts, intruder warnings, and vault status notifications.",
+                iconName = "NotificationsActive",
+                isGranted = hasNotif,
+                isDangerousRuntime = true,
+                permissionManifestName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.POST_NOTIFICATIONS
+                } else null
+            )
+        )
+
+        // 6. Display Over Other Apps (Overlay)
+        val hasOverlay = Settings.canDrawOverlays(ctx)
+        list.add(
+            SystemPermissionItem(
+                id = "perm_overlay",
+                title = "Display Over Other Apps",
+                description = "Required for App Lock to show PIN lock screen on top of protected apps.",
+                iconName = "Layers",
+                isGranted = hasOverlay,
+                isDangerousRuntime = false,
+                settingsAction = Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+            )
+        )
+
+        // 7. Usage Stats (App Monitor)
+        val appOps = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+        val mode = appOps?.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            android.os.Process.myUid(),
+            ctx.packageName
+        ) ?: AppOpsManager.MODE_DEFAULT
+        val hasUsage = mode == AppOpsManager.MODE_ALLOWED
+        list.add(
+            SystemPermissionItem(
+                id = "perm_usage",
+                title = "Usage Access (App Detection)",
+                description = "Detects which app is currently opened to trigger immediate PIN protection.",
+                iconName = "QueryStats",
+                isGranted = hasUsage,
+                isDangerousRuntime = false,
+                settingsAction = Settings.ACTION_USAGE_ACCESS_SETTINGS
+            )
+        )
+
+        // 8. Battery Optimization (Keep Alive)
+        val powerManager = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val isIgnoringBattery = powerManager?.isIgnoringBatteryOptimizations(ctx.packageName) ?: false
+        list.add(
+            SystemPermissionItem(
+                id = "perm_battery",
+                title = "Battery Unrestricted (Stay Active)",
+                description = "Ensures the vault background lock service is never killed by Android OS.",
+                iconName = "BatterySaver",
+                isGranted = isIgnoringBattery,
+                isDangerousRuntime = false,
+                settingsAction = Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+            )
+        )
+
+        return list
     }
 }

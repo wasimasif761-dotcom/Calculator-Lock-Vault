@@ -182,6 +182,18 @@ fun VaultAppContent(repository: VaultRepository) {
                                 onNavigateBack = { currentVaultSection = VaultSection.DASHBOARD }
                             )
                         }
+                        VaultSection.CONTACTS -> {
+                            PrivateContactsScreen(
+                                repository = repository,
+                                onNavigateBack = { currentVaultSection = VaultSection.DASHBOARD }
+                            )
+                        }
+                        VaultSection.PERMISSIONS -> {
+                            AppPermissionsScreen(
+                                repository = repository,
+                                onNavigateBack = { currentVaultSection = VaultSection.DASHBOARD }
+                            )
+                        }
                         VaultSection.SUBSCRIPTION -> {
                             SubscriptionScreen(
                                 repository = repository,

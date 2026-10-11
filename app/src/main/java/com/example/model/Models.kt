@@ -114,6 +114,28 @@ data class IntruderAttempt(
     val snapshotRes: String = "ic_intruder_mock"
 )
 
+data class VaultContact(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val phoneNumber: String,
+    val email: String = "",
+    val notes: String = "",
+    val isHidden: Boolean = true,
+    val avatarColorHex: Long = 0xFF2563EB,
+    val dateAdded: Long = System.currentTimeMillis()
+)
+
+data class SystemPermissionItem(
+    val id: String,
+    val title: String,
+    val description: String,
+    val iconName: String,
+    val isGranted: Boolean,
+    val isDangerousRuntime: Boolean = true,
+    val permissionManifestName: String? = null,
+    val settingsAction: String? = null
+)
+
 object AppDeveloperInfo {
     const val DEVELOPER_NAME = "Waseem Asif"
     const val WHATSAPP_NUMBER = "+966597447275"

@@ -1,7 +1,9 @@
 package com.example.ui.vault
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,22 +43,38 @@ fun MediaVaultScreen(
     repository: VaultRepository,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val mediaItems by repository.mediaItems.collectAsState()
     var selectedTab by remember { mutableStateOf(MediaType.PHOTO) }
     var viewingMedia by remember { mutableStateOf<VaultMedia?>(null) }
     var showImportMenu by remember { mutableStateOf(false) }
+    var recentlyImportedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var showDeleteOriginalDialog by remember { mutableStateOf(false) }
 
-    // Modern Photo Picker (Zero permissions needed)
+    // System IntentSender launcher for Android 11+ MediaStore deletion
+    val deleteIntentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            Toast.makeText(context, "Original files deleted from phone Gallery!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Modern Photo Picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
-        uris.forEach { uri ->
-            val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "imported_media_${System.currentTimeMillis()}"
-            repository.addMedia(
-                title = fileName,
-                type = selectedTab,
-                uri = uri
-            )
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "imported_media_${System.currentTimeMillis()}"
+                repository.addMedia(
+                    title = fileName,
+                    type = selectedTab,
+                    uri = uri
+                )
+            }
+            recentlyImportedUris = uris
+            showDeleteOriginalDialog = true
         }
     }
 
@@ -63,13 +82,28 @@ fun MediaVaultScreen(
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        uris.forEach { uri ->
-            val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document_${System.currentTimeMillis()}"
-            repository.addMedia(
-                title = fileName,
-                type = MediaType.FILE,
-                uri = uri
-            )
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document_${System.currentTimeMillis()}"
+                repository.addMedia(
+                    title = fileName,
+                    type = MediaType.FILE,
+                    uri = uri
+                )
+            }
+            recentlyImportedUris = uris
+            showDeleteOriginalDialog = true
+        }
+    }
+
+    // Secret Camera Capture directly into Vault
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            val fileName = "Secret_Camera_${System.currentTimeMillis()}"
+            repository.addMediaFromBitmap(fileName, bitmap)
+            Toast.makeText(context, "Secret photo saved directly in Vault! (Not visible in phone gallery)", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -85,6 +119,15 @@ fun MediaVaultScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = Color.White
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { cameraLauncher.launch(null) }) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoCamera,
+                            contentDescription = "Secret Camera Snap",
+                            tint = Color(0xFF38BDF8)
                         )
                     }
                 },
@@ -125,6 +168,33 @@ fun MediaVaultScreen(
                 .padding(padding)
                 .testTag("media_vault_screen")
         ) {
+            // Vault Privacy Indicator Banner
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2638)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Encrypted Vault Active • Files stay 100% private inside app",
+                        color = Color(0xFF94A3B8),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
             // Tabs Row
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,
@@ -292,19 +362,27 @@ fun MediaVaultScreen(
                         // Unhide / Restore button
                         OutlinedButton(
                             onClick = {
+                                val ok = repository.unhideMediaToGallery(media.id)
+                                if (ok) {
+                                    Toast.makeText(context, "Restored to Phone Gallery!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    repository.restoreMedia(media.id)
+                                    Toast.makeText(context, "Item restored.", Toast.LENGTH_SHORT).show()
+                                }
                                 viewingMedia = null
                             },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.LockOpen, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Unhide", color = Color(0xFF60A5FA))
+                            Text("Unhide to Gallery", color = Color(0xFF60A5FA))
                         }
 
                         // Delete button
                         Button(
                             onClick = {
-                                repository.deleteMedia(media.id)
+                                repository.permanentlyDeleteMedia(media.id)
+                                Toast.makeText(context, "Permanently deleted from Vault", Toast.LENGTH_SHORT).show()
                                 viewingMedia = null
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -318,6 +396,64 @@ fun MediaVaultScreen(
                 }
             }
         }
+    }
+
+    // Dialog asking to delete original from phone gallery so it is 100% hidden
+    if (showDeleteOriginalDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteOriginalDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = null,
+                    tint = Color(0xFFEF4444),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Delete from Phone Gallery?",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "${recentlyImportedUris.size} item(s) are encrypted inside Calculator Lock.\n\nTo make them completely disappear from your phone's Gallery so only you can see them, delete the original copies now.",
+                    color = Color(0xFFCBD5E1),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteOriginalDialog = false
+                        var anyPending = false
+                        for (uri in recentlyImportedUris) {
+                            val pendingIntent = repository.deleteOriginalFromPhone(uri)
+                            if (pendingIntent != null && !anyPending) {
+                                anyPending = true
+                                deleteIntentSenderLauncher.launch(
+                                    IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                                )
+                            }
+                        }
+                        if (!anyPending) {
+                            Toast.makeText(context, "Original deleted from phone! It is now hidden only in Vault.", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("Delete from Gallery (Hide)")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteOriginalDialog = false }) {
+                    Text("Keep in Phone Gallery", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF1E2533)
+        )
     }
 }
 

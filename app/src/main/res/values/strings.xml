@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Calculator Lock</string>
+    <string name="app_lock_accessibility_desc">Enables Calculator Lock to detect when protected apps are opened and display the security lock screen.</string>
 </resources>

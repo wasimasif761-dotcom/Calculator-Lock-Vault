@@ -1,5 +1,9 @@
 package com.example.ui.setup
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +26,12 @@ fun StoragePermissionDialog(
     onAllow: () -> Unit,
     onDeny: () -> Unit
 ) {
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        onAllow()
+    }
+
     Dialog(onDismissRequest = onDeny) {
         Card(
             modifier = Modifier
@@ -50,7 +60,7 @@ fun StoragePermissionDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Allow Calculator to access photos, media and files on your device?",
+                    text = "Allow Calculator to access photos, media, contacts and files on your device?",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF111827),
@@ -59,12 +69,38 @@ fun StoragePermissionDialog(
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Divider(color = Color(0xFFE5E7EB), thickness = 1.dp)
+                Text(
+                    text = "This allows the vault to hide your private photos, encrypt secret contacts, and run stealth background protection.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color(0xFF6B7280),
+                        lineHeight = 18.sp
+                    ),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
 
                 TextButton(
-                    onClick = onAllow,
+                    onClick = {
+                        val permissions = mutableListOf<String>()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                            permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                            permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        }
+                        permissions.add(Manifest.permission.READ_CONTACTS)
+                        permissions.add(Manifest.permission.WRITE_CONTACTS)
+                        permissions.add(Manifest.permission.CAMERA)
+                        permissionLauncher.launch(permissions.toTypedArray())
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -79,7 +115,7 @@ fun StoragePermissionDialog(
                     )
                 }
 
-                Divider(color = Color(0xFFE5E7EB), thickness = 1.dp)
+                HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
 
                 TextButton(
                     onClick = onDeny,

@@ -42,6 +42,8 @@ enum class VaultSection {
     BROWSER,
     DOWNLOADER,
     NOTES,
+    CONTACTS,
+    PERMISSIONS,
     SUBSCRIPTION,
     SETTINGS
 }
@@ -72,6 +74,7 @@ fun VaultDashboardScreen(
     val notes by repository.notes.collectAsState()
     val lockedApps by repository.lockedApps.collectAsState()
     val downloads by repository.downloads.collectAsState()
+    val contacts by repository.contacts.collectAsState()
     val userProfile by repository.userProfile.collectAsState()
     val intruderAttempts by repository.intruderAttempts.collectAsState()
     val currentPin by repository.passcode.collectAsState()
@@ -179,6 +182,21 @@ fun VaultDashboardScreen(
             iconBgColor = Color(0xFFEC4899),
             section = VaultSection.NOTES,
             countBadge = "${notes.size}"
+        ),
+        DashboardItem(
+            title = "Secret Contacts",
+            subtitle = "${contacts.size} contacts hidden",
+            icon = Icons.Default.Contacts,
+            iconBgColor = Color(0xFF2563EB),
+            section = VaultSection.CONTACTS,
+            countBadge = "${contacts.size}"
+        ),
+        DashboardItem(
+            title = "Device Permissions",
+            subtitle = "Full mobile protection",
+            icon = Icons.Default.Security,
+            iconBgColor = Color(0xFF059669),
+            section = VaultSection.PERMISSIONS
         )
     )
 
@@ -328,6 +346,23 @@ fun VaultDashboardScreen(
                             onClick = {
                                 scope.launch { drawerState.close() }
                                 onNavigateSection(VaultSection.NOTES)
+                            }
+                        )
+                        DrawerNavigationItem(
+                            icon = Icons.Default.Contacts,
+                            title = "Secret Contacts Vault",
+                            badge = "${contacts.size}",
+                            onClick = {
+                                scope.launch { drawerState.close() }
+                                onNavigateSection(VaultSection.CONTACTS)
+                            }
+                        )
+                        DrawerNavigationItem(
+                            icon = Icons.Default.Security,
+                            title = "Permissions & Protection",
+                            onClick = {
+                                scope.launch { drawerState.close() }
+                                onNavigateSection(VaultSection.PERMISSIONS)
                             }
                         )
 
