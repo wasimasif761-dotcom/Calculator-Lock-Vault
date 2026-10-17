@@ -1,6 +1,8 @@
 package com.example.ui.vault
 
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -27,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.drawable.toBitmap
 import com.example.data.VaultRepository
 import com.example.model.LockableApp
 import kotlinx.coroutines.delay
@@ -43,6 +47,10 @@ fun AppLockScreen(
     var simulatingAppLockFor by remember { mutableStateOf<LockableApp?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     val isServiceActive = remember { com.example.service.AppLockAccessibilityService.isAccessibilityEnabled(context) }
+
+    LaunchedEffect(Unit) {
+        repository.loadDeviceInstalledApps()
+    }
 
     val filteredApps = remember(apps, searchQuery) {
         if (searchQuery.isBlank()) apps else apps.filter {
@@ -61,6 +69,18 @@ fun AppLockScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = Color.White
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { repository.loadDeviceInstalledApps() },
+                        modifier = Modifier.testTag("refresh_apps_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Scan Phone Apps",
+                            tint = Color(0xFF38BDF8)
                         )
                     }
                 },
@@ -259,21 +279,11 @@ fun AppLockScreen(
                                     simulatingAppLockFor = app
                                 }
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(app.iconColor),
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = app.appName.take(1),
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                    )
-                                }
-                            }
+                            AppIconView(
+                                packageName = app.packageName,
+                                fallbackName = app.appName,
+                                fallbackColor = app.iconColor
+                            )
 
                             Spacer(modifier = Modifier.width(14.dp))
 
@@ -509,6 +519,55 @@ fun AppLockSimulatorDialog(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AppIconView(
+    packageName: String,
+    fallbackName: String,
+    fallbackColor: Long,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appIcon = remember(packageName) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(packageName)
+            drawable.toBitmap(
+                width = 96,
+                height = 96,
+                config = Bitmap.Config.ARGB_8888
+            ).asImageBitmap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    if (appIcon != null) {
+        Image(
+            bitmap = appIcon,
+            contentDescription = fallbackName,
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(12.dp))
+        )
+    } else {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(fallbackColor),
+            modifier = modifier.size(size)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = fallbackName.take(1),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                )
             }
         }
     }

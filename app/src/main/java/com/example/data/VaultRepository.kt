@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -118,199 +120,418 @@ class VaultRepository(private val context: Context) {
     }
 
     private fun initDefaultData() {
-        // Seed default sample media for instant preview
-        val initialMedia = listOf(
-            VaultMedia(
-                id = "demo_photo_1",
-                title = "Private_Document_01.jpg",
-                type = MediaType.PHOTO,
-                sizeBytes = 2_450_000,
-                dateAdded = System.currentTimeMillis() - 86400000 * 2
-            ),
-            VaultMedia(
-                id = "demo_photo_2",
-                title = "Family_Vacation_Hidden.jpg",
-                type = MediaType.PHOTO,
-                sizeBytes = 3_120_000,
-                dateAdded = System.currentTimeMillis() - 86400000 * 1
-            ),
-            VaultMedia(
-                id = "demo_photo_3",
-                title = "Secret_ID_Scan.png",
-                type = MediaType.PHOTO,
-                sizeBytes = 1_850_000,
-                dateAdded = System.currentTimeMillis() - 3600000 * 5
-            ),
-            VaultMedia(
-                id = "demo_video_1",
-                title = "The brilliance of diamonds.mp4",
-                type = MediaType.VIDEO,
-                localUri = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-                sizeBytes = 26_000_000,
-                durationText = "04:29",
-                dateAdded = System.currentTimeMillis() - 86400000 * 3
-            ),
-            VaultMedia(
-                id = "demo_video_2",
-                title = "Birthday_Surprise.mp4",
-                type = MediaType.VIDEO,
-                localUri = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-                sizeBytes = 48_500_000,
-                durationText = "02:15",
-                dateAdded = System.currentTimeMillis() - 86400000 * 4
-            ),
-            VaultMedia(
-                id = "demo_file_1",
-                title = "Bank_Account_Statement.pdf",
-                type = MediaType.FILE,
-                sizeBytes = 850_000,
-                dateAdded = System.currentTimeMillis() - 86400000 * 6
-            ),
-            VaultMedia(
-                id = "demo_file_2",
-                title = "Crypto_Recovery_Key.txt",
-                type = MediaType.FILE,
-                sizeBytes = 12_400,
-                dateAdded = System.currentTimeMillis() - 86400000 * 7
-            )
-        )
-        _mediaItems.value = initialMedia
+        // 1. Load persisted Media Catalog from internal storage
+        _mediaItems.value = loadMediaCatalog()
 
-        // Seed default private notes matching Screenshot 8
-        val initialNotes = listOf(
-            VaultNote(
-                id = "note_1",
-                title = "Winter Holiday Diary",
-                content = "It's in the winter holiday, February 14th, my girlfriend and I had a romantic Valentine's Day meeting. We had a feast together at Piru steakshop, then walked along the river under the glowing lanterns.",
-                category = NoteCategory.DIARY,
-                isPinned = true,
-                colorHex = 0xFF374151
-            ),
-            VaultNote(
-                id = "note_2",
-                title = "Encrypted Vault Master Passwords",
-                content = "Primary email: Alpha#9920\nBanking pin: 7492\nServer root SSH: vau1t_s3cur1ty_k3y\nRecovery Seed: apple banana orbit horizon velvet galaxy",
-                category = NoteCategory.PASSWORD,
-                isPinned = true,
-                colorHex = 0xFF1E3A8A
-            ),
-            VaultNote(
-                id = "note_3",
-                title = "Private Contacts & VIP Line",
-                content = "Confidential Attorney: +1-555-0199\nPrivate Broker: +1-555-0842 (Code: WHISPER)\nSafe House Address: 742 Evergreen Terrace, Sector 4",
-                category = NoteCategory.CONTACT,
-                colorHex = 0xFF065F46
-            ),
-            VaultNote(
-                id = "note_4",
-                title = "Personal Goals & Future Plans",
-                content = "1. Launch Calculator Lock app with Waseem Asif on Play Store.\n2. Integrate Lemon Squeezy / Paddle with low transaction fees.\n3. Implement zero-knowledge media encryption for maximum safety.",
-                category = NoteCategory.SECRET,
-                colorHex = 0xFF701A75
+        // 2. Load Notes from storage or default
+        val savedNotes = loadNotesCatalog()
+        if (savedNotes.isNotEmpty()) {
+            _notes.value = savedNotes
+        } else {
+            val initialNotes = listOf(
+                VaultNote(
+                    id = "note_1",
+                    title = "Winter Holiday Diary",
+                    content = "It's in the winter holiday, February 14th, my girlfriend and I had a romantic Valentine's Day meeting. We had a feast together at Piru steakshop, then walked along the river under the glowing lanterns.",
+                    category = NoteCategory.DIARY,
+                    isPinned = true,
+                    colorHex = 0xFF374151
+                ),
+                VaultNote(
+                    id = "note_2",
+                    title = "Encrypted Vault Master Passwords",
+                    content = "Primary email: Alpha#9920\nBanking pin: 7492\nServer root SSH: vau1t_s3cur1ty_k3y\nRecovery Seed: apple banana orbit horizon velvet galaxy",
+                    category = NoteCategory.PASSWORD,
+                    isPinned = true,
+                    colorHex = 0xFF1E3A8A
+                ),
+                VaultNote(
+                    id = "note_3",
+                    title = "Personal Goals & Future Plans",
+                    content = "1. Launch Calculator Lock app with Waseem Asif on Play Store.\n2. Zero-knowledge media encryption for maximum safety.",
+                    category = NoteCategory.SECRET,
+                    colorHex = 0xFF701A75
+                )
             )
-        )
-        _notes.value = initialNotes
+            _notes.value = initialNotes
+            saveNotesCatalog()
+        }
 
-        // Seed Apps for Lock & Hide
-        val initialApps = listOf(
-            LockableApp("com.whatsapp", "WhatsApp", "Social & Chat", isLocked = true, isHidden = false, iconColor = 0xFF25D366),
-            LockableApp("com.facebook.orca", "Messenger", "Social & Chat", isLocked = true, isHidden = false, iconColor = 0xFF0084FF),
-            LockableApp("com.instagram.android", "Instagram", "Social & Media", isLocked = true, isHidden = true, iconColor = 0xFFE1306C),
-            LockableApp("org.telegram.messenger", "Telegram", "Secure Chat", isLocked = false, isHidden = true, iconColor = 0xFF229ED9),
-            LockableApp("com.facebook.katana", "Facebook", "Social", isLocked = false, isHidden = false, iconColor = 0xFF1877F2),
-            LockableApp("com.google.android.apps.photos", "Google Photos", "Gallery", isLocked = true, isHidden = false, iconColor = 0xFFEA4335),
-            LockableApp("com.android.settings", "Settings", "System", isLocked = true, isHidden = false, iconColor = 0xFF607D8B),
-            LockableApp("com.tinder", "Tinder", "Dating", isLocked = true, isHidden = true, iconColor = 0xFFFE3C72),
-            LockableApp("com.zhiliaoapp.musically", "TikTok", "Entertainment", isLocked = false, isHidden = false, iconColor = 0xFF000000),
-            LockableApp("com.android.chrome", "Chrome Browser", "Browser", isLocked = false, isHidden = false, iconColor = 0xFF4285F4)
-        )
-        _lockedApps.value = initialApps
+        // 3. Load Real Device Installed Apps immediately on launch
+        loadDeviceInstalledApps()
 
-        // Seed Downloads matching Screenshot 6
-        val initialDownloads = listOf(
-            VaultDownload(
-                id = "dl_1",
-                title = "The brilliance of diamonds",
-                sourceUrl = "https://private-vault.cdn/diamonds_4k.mp4",
-                totalBytes = 26_000_000,
-                downloadedBytes = 20_000_000,
-                speedText = "23MB/s",
-                status = DownloadStatus.DOWNLOADING,
-                durationText = "41:29"
-            ),
-            VaultDownload(
-                id = "dl_2",
-                title = "Run Forever",
-                sourceUrl = "https://private-vault.cdn/run_forever.mp4",
-                totalBytes = 322_000_000,
-                downloadedBytes = 182_000_000,
-                speedText = "21MB/s",
-                status = DownloadStatus.DOWNLOADING,
-                durationText = "41:29"
-            ),
-            VaultDownload(
-                id = "dl_3",
-                title = "Abstract 3d illustration of a...",
-                sourceUrl = "https://private-vault.cdn/abstract_3d.mp4",
-                totalBytes = 56_000_000,
-                downloadedBytes = 42_000_000,
-                speedText = "21MB/s",
-                status = DownloadStatus.DOWNLOADING,
-                durationText = "41:29"
-            ),
-            VaultDownload(
-                id = "dl_4",
-                title = "Black hole",
-                sourceUrl = "https://private-vault.cdn/black_hole_sim.mp4",
-                totalBytes = 322_000_000,
-                downloadedBytes = 182_000_000,
-                speedText = "21MB/s",
-                status = DownloadStatus.DOWNLOADING,
-                durationText = "41:29"
+        // 4. Load Browser History
+        val savedHistory = loadBrowserHistoryCatalog()
+        if (savedHistory.isNotEmpty()) {
+            _browserHistory.value = savedHistory
+        } else {
+            saveBrowserHistoryCatalog()
+        }
+
+        // 5. Load Contacts
+        val savedContacts = loadContactsCatalog()
+        if (savedContacts.isNotEmpty()) {
+            _contacts.value = savedContacts
+        } else {
+            val initialContacts = listOf(
+                VaultContact(
+                    id = "contact_dev_waseem",
+                    name = "Waseem Asif (Developer)",
+                    phoneNumber = "+966597447275",
+                    email = "wasimasif761@gmail.com",
+                    notes = "Official Developer & Privacy Architect. Reachable via WhatsApp & Email.",
+                    isHidden = true,
+                    avatarColorHex = 0xFF2563EB
+                )
             )
-        )
-        _downloads.value = initialDownloads
+            _contacts.value = initialContacts
+            saveContactsCatalog()
+        }
 
-        // Seed default confidential contacts
-        val initialContacts = listOf(
-            VaultContact(
-                id = "contact_dev_waseem",
-                name = "Waseem Asif (Developer)",
-                phoneNumber = "+966597447275",
-                email = "wasimasif761@gmail.com",
-                notes = "Official Developer & Privacy Architect. Reachable via WhatsApp & Email.",
-                isHidden = true,
-                avatarColorHex = 0xFF2563EB
-            ),
-            VaultContact(
-                id = "contact_confidential_legal",
-                name = "Confidential Attorney",
-                phoneNumber = "+1555019982",
-                email = "legal.priv@vault.sec",
-                notes = "Emergency legal council & NDA agreement coordinator.",
-                isHidden = true,
-                avatarColorHex = 0xFF10B981
-            ),
-            VaultContact(
-                id = "contact_swiss_banker",
-                name = "Private Swiss Banker",
-                phoneNumber = "+41228190000",
-                email = "wealth.swiss@offshore.ch",
-                notes = "Account manager. Safe verification code: WHISPER-99.",
-                isHidden = true,
-                avatarColorHex = 0xFF8B5CF6
-            ),
-            VaultContact(
-                id = "contact_emergency_safehouse",
-                name = "Safehouse Protocol Line",
-                phoneNumber = "+442079460912",
-                email = "protocol@safehouse.net",
-                notes = "Priority contact for emergency data wipes.",
-                isHidden = true,
-                avatarColorHex = 0xFFF59E0B
-            )
-        )
-        _contacts.value = initialContacts
+        // 6. Load Downloads
+        val savedDownloads = loadDownloadsCatalog()
+        if (savedDownloads.isNotEmpty()) {
+            _downloads.value = savedDownloads
+        }
+    }
+
+    // =========================================================================
+    // PERSISTENCE ENGINE (JSON Catalogs stored safely in app internal storage)
+    // =========================================================================
+
+    fun saveMediaCatalog() {
+        try {
+            val file = File(context.filesDir, "vault_media_catalog.json")
+            val jsonArray = JSONArray()
+            for (item in _mediaItems.value) {
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("title", item.title)
+                    put("type", item.type.name)
+                    put("localUri", item.localUri ?: "")
+                    put("resourceName", item.resourceName ?: "")
+                    put("dateAdded", item.dateAdded)
+                    put("sizeBytes", item.sizeBytes)
+                    put("durationText", item.durationText ?: "")
+                    put("isFavorite", item.isFavorite)
+                    put("isDeleted", item.isDeleted)
+                }
+                jsonArray.put(obj)
+            }
+            file.writeText(jsonArray.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadMediaCatalog(): List<VaultMedia> {
+        val list = mutableListOf<VaultMedia>()
+        try {
+            val file = File(context.filesDir, "vault_media_catalog.json")
+            if (file.exists()) {
+                val content = file.readText()
+                if (content.isNotBlank()) {
+                    val jsonArray = JSONArray(content)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val id = obj.optString("id", UUID.randomUUID().toString())
+                        val title = obj.optString("title", "Untitled")
+                        val typeStr = obj.optString("type", MediaType.PHOTO.name)
+                        val type = try { MediaType.valueOf(typeStr) } catch (e: Exception) { MediaType.PHOTO }
+                        val localUriRaw = obj.optString("localUri", "")
+                        val localUri = if (localUriRaw.isBlank()) null else localUriRaw
+                        val resourceNameRaw = obj.optString("resourceName", "")
+                        val resourceName = if (resourceNameRaw.isBlank()) null else resourceNameRaw
+                        val dateAdded = obj.optLong("dateAdded", System.currentTimeMillis())
+                        val sizeBytes = obj.optLong("sizeBytes", 0L)
+                        val durationRaw = obj.optString("durationText", "")
+                        val durationText = if (durationRaw.isBlank()) null else durationRaw
+                        val isFavorite = obj.optBoolean("isFavorite", false)
+                        val isDeleted = obj.optBoolean("isDeleted", false)
+
+                        val isValid = when {
+                            localUri == null -> false
+                            localUri.startsWith("http://") || localUri.startsWith("https://") || localUri.startsWith("content://") -> true
+                            localUri.startsWith("/") -> File(localUri).exists()
+                            else -> true
+                        }
+                        if (isValid) {
+                            list.add(
+                                VaultMedia(
+                                    id = id,
+                                    title = title,
+                                    type = type,
+                                    localUri = localUri,
+                                    resourceName = resourceName,
+                                    dateAdded = dateAdded,
+                                    sizeBytes = sizeBytes,
+                                    durationText = durationText,
+                                    isFavorite = isFavorite,
+                                    isDeleted = isDeleted
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Automatic Recovery: Scan physical vault_media/ folder for any existing files
+        try {
+            val vaultDir = File(context.filesDir, "vault_media")
+            if (vaultDir.exists() && vaultDir.isDirectory) {
+                val files = vaultDir.listFiles() ?: emptyArray()
+                for (f in files) {
+                    if (f.isFile && f.length() > 0 && list.none { it.localUri == f.absolutePath }) {
+                        val rawName = f.name
+                        val title = if (rawName.contains("_")) rawName.substringAfter("_") else rawName
+                        val lower = title.lowercase()
+                        val type = when {
+                            lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov") || lower.endsWith(".avi") -> MediaType.VIDEO
+                            lower.endsWith(".pdf") || lower.endsWith(".txt") || lower.endsWith(".doc") || lower.endsWith(".docx") || lower.endsWith(".zip") -> MediaType.FILE
+                            else -> MediaType.PHOTO
+                        }
+                        var durationText: String? = null
+                        if (type == MediaType.VIDEO) {
+                            try {
+                                val retriever = MediaMetadataRetriever()
+                                retriever.setDataSource(f.absolutePath)
+                                val timeMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                                retriever.release()
+                                val s = (timeMs / 1000) % 60
+                                val m = (timeMs / 1000) / 60
+                                durationText = String.format("%02d:%02d", m, s)
+                            } catch (e: Exception) {
+                                durationText = "01:30"
+                            }
+                        }
+                        list.add(
+                            VaultMedia(
+                                id = rawName,
+                                title = title,
+                                type = type,
+                                localUri = f.absolutePath,
+                                sizeBytes = f.length(),
+                                durationText = durationText,
+                                dateAdded = f.lastModified()
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return list
+    }
+
+    fun saveNotesCatalog() {
+        try {
+            val file = File(context.filesDir, "vault_notes_catalog.json")
+            val jsonArray = JSONArray()
+            for (note in _notes.value) {
+                val obj = JSONObject().apply {
+                    put("id", note.id)
+                    put("title", note.title)
+                    put("content", note.content)
+                    put("category", note.category.name)
+                    put("dateModified", note.dateModified)
+                    put("isPinned", note.isPinned)
+                    put("colorHex", note.colorHex)
+                }
+                jsonArray.put(obj)
+            }
+            file.writeText(jsonArray.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadNotesCatalog(): List<VaultNote> {
+        val list = mutableListOf<VaultNote>()
+        try {
+            val file = File(context.filesDir, "vault_notes_catalog.json")
+            if (file.exists()) {
+                val content = file.readText()
+                if (content.isNotBlank()) {
+                    val jsonArray = JSONArray(content)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val id = obj.optString("id", UUID.randomUUID().toString())
+                        val title = obj.optString("title", "")
+                        val contentStr = obj.optString("content", "")
+                        val catStr = obj.optString("category", NoteCategory.GENERAL.name)
+                        val cat = try { NoteCategory.valueOf(catStr) } catch (e: Exception) { NoteCategory.GENERAL }
+                        val dateModified = obj.optLong("dateModified", System.currentTimeMillis())
+                        val isPinned = obj.optBoolean("isPinned", false)
+                        val colorHex = obj.optLong("colorHex", 0xFF2A2E39)
+                        list.add(VaultNote(id, title, contentStr, cat, dateModified, isPinned, colorHex))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
+    fun saveBrowserHistoryCatalog() {
+        try {
+            val file = File(context.filesDir, "vault_browser_history.json")
+            val jsonArray = JSONArray()
+            for (item in _browserHistory.value) {
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("title", item.title)
+                    put("url", item.url)
+                    put("timestamp", item.timestamp)
+                }
+                jsonArray.put(obj)
+            }
+            file.writeText(jsonArray.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadBrowserHistoryCatalog(): List<BrowserHistoryItem> {
+        val list = mutableListOf<BrowserHistoryItem>()
+        try {
+            val file = File(context.filesDir, "vault_browser_history.json")
+            if (file.exists()) {
+                val content = file.readText()
+                if (content.isNotBlank()) {
+                    val jsonArray = JSONArray(content)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        list.add(
+                            BrowserHistoryItem(
+                                id = obj.optString("id", UUID.randomUUID().toString()),
+                                title = obj.optString("title", ""),
+                                url = obj.optString("url", ""),
+                                timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
+    fun saveContactsCatalog() {
+        try {
+            val file = File(context.filesDir, "vault_contacts_catalog.json")
+            val jsonArray = JSONArray()
+            for (c in _contacts.value) {
+                val obj = JSONObject().apply {
+                    put("id", c.id)
+                    put("name", c.name)
+                    put("phoneNumber", c.phoneNumber)
+                    put("email", c.email)
+                    put("notes", c.notes)
+                    put("isHidden", c.isHidden)
+                    put("avatarColorHex", c.avatarColorHex)
+                }
+                jsonArray.put(obj)
+            }
+            file.writeText(jsonArray.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadContactsCatalog(): List<VaultContact> {
+        val list = mutableListOf<VaultContact>()
+        try {
+            val file = File(context.filesDir, "vault_contacts_catalog.json")
+            if (file.exists()) {
+                val content = file.readText()
+                if (content.isNotBlank()) {
+                    val jsonArray = JSONArray(content)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        list.add(
+                            VaultContact(
+                                id = obj.optString("id", UUID.randomUUID().toString()),
+                                name = obj.optString("name", ""),
+                                phoneNumber = obj.optString("phoneNumber", ""),
+                                email = obj.optString("email", ""),
+                                notes = obj.optString("notes", ""),
+                                isHidden = obj.optBoolean("isHidden", true),
+                                avatarColorHex = obj.optLong("avatarColorHex", 0xFF8B5CF6)
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
+    fun saveDownloadsCatalog() {
+        try {
+            val file = File(context.filesDir, "vault_downloads_catalog.json")
+            val jsonArray = JSONArray()
+            for (d in _downloads.value) {
+                val obj = JSONObject().apply {
+                    put("id", d.id)
+                    put("title", d.title)
+                    put("sourceUrl", d.sourceUrl)
+                    put("totalBytes", d.totalBytes)
+                    put("downloadedBytes", d.downloadedBytes)
+                    put("speedText", d.speedText)
+                    put("status", d.status.name)
+                    put("durationText", d.durationText ?: "")
+                    put("dateStarted", d.dateStarted)
+                }
+                jsonArray.put(obj)
+            }
+            file.writeText(jsonArray.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadDownloadsCatalog(): List<VaultDownload> {
+        val list = mutableListOf<VaultDownload>()
+        try {
+            val file = File(context.filesDir, "vault_downloads_catalog.json")
+            if (file.exists()) {
+                val content = file.readText()
+                if (content.isNotBlank()) {
+                    val jsonArray = JSONArray(content)
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val stStr = obj.optString("status", DownloadStatus.COMPLETED.name)
+                        val status = try { DownloadStatus.valueOf(stStr) } catch (e: Exception) { DownloadStatus.COMPLETED }
+                        list.add(
+                            VaultDownload(
+                                id = obj.optString("id", UUID.randomUUID().toString()),
+                                title = obj.optString("title", ""),
+                                sourceUrl = obj.optString("sourceUrl", ""),
+                                totalBytes = obj.optLong("totalBytes", 0L),
+                                downloadedBytes = obj.optLong("downloadedBytes", 0L),
+                                speedText = obj.optString("speedText", ""),
+                                status = status,
+                                durationText = obj.optString("durationText", "03:45"),
+                                dateStarted = obj.optLong("dateStarted", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
     }
 
     // Setup Actions
@@ -340,43 +561,77 @@ class VaultRepository(private val context: Context) {
     // Media actions
     fun addMedia(title: String, type: MediaType, uri: Uri? = null): VaultMedia {
         var localPath: String? = null
-        var sizeBytes = 1024 * 1024 * 3L
+        var sizeBytes = 1024 * 1024 * 2L
+        var durationText: String? = null
+
+        val vaultDir = File(context.filesDir, "vault_media")
+        if (!vaultDir.exists()) vaultDir.mkdirs()
+
+        var cleanTitle = title.trim()
+        if (!cleanTitle.contains(".")) {
+            when (type) {
+                MediaType.PHOTO -> cleanTitle += ".jpg"
+                MediaType.VIDEO -> cleanTitle += ".mp4"
+                MediaType.FILE -> cleanTitle += ".bin"
+            }
+        }
+
         if (uri != null) {
             try {
-                val vaultDir = File(context.filesDir, "vault_media")
-                if (!vaultDir.exists()) vaultDir.mkdirs()
-                val destFile = File(vaultDir, "${UUID.randomUUID()}_$title")
+                val destFile = File(vaultDir, "${UUID.randomUUID()}_$cleanTitle")
                 context.contentResolver.openInputStream(uri)?.use { input: InputStream ->
                     FileOutputStream(destFile).use { output ->
                         input.copyTo(output)
+                        output.flush()
                     }
                 }
-                localPath = destFile.absolutePath
-                sizeBytes = destFile.length()
+                if (destFile.exists() && destFile.length() > 0) {
+                    localPath = destFile.absolutePath
+                    sizeBytes = destFile.length()
+
+                    if (type == MediaType.VIDEO) {
+                        try {
+                            val retriever = MediaMetadataRetriever()
+                            retriever.setDataSource(destFile.absolutePath)
+                            val timeMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                            retriever.release()
+                            val s = (timeMs / 1000) % 60
+                            val m = (timeMs / 1000) / 60
+                            durationText = String.format("%02d:%02d", m, s)
+                        } catch (e: Exception) {
+                            durationText = "01:30"
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+
         val item = VaultMedia(
-            title = title,
+            title = cleanTitle,
             type = type,
             localUri = localPath ?: uri?.toString(),
             sizeBytes = sizeBytes,
-            durationText = if (type == MediaType.VIDEO) "01:30" else null
+            durationText = durationText,
+            dateAdded = System.currentTimeMillis()
         )
         _mediaItems.value = listOf(item) + _mediaItems.value
+        saveMediaCatalog()
         return item
     }
 
     fun addMediaFromBitmap(title: String, bitmap: Bitmap): VaultMedia {
         var localPath: String? = null
         var sizeBytes = 0L
+        val cleanTitle = if (title.endsWith(".jpg", ignoreCase = true)) title else "$title.jpg"
         try {
             val vaultDir = File(context.filesDir, "vault_media")
             if (!vaultDir.exists()) vaultDir.mkdirs()
-            val destFile = File(vaultDir, "${UUID.randomUUID()}_$title.jpg")
+            val destFile = File(vaultDir, "${UUID.randomUUID()}_$cleanTitle")
             FileOutputStream(destFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                out.flush()
             }
             localPath = destFile.absolutePath
             sizeBytes = destFile.length()
@@ -384,12 +639,14 @@ class VaultRepository(private val context: Context) {
             e.printStackTrace()
         }
         val item = VaultMedia(
-            title = title,
+            title = cleanTitle,
             type = MediaType.PHOTO,
             localUri = localPath,
-            sizeBytes = sizeBytes
+            sizeBytes = sizeBytes,
+            dateAdded = System.currentTimeMillis()
         )
         _mediaItems.value = listOf(item) + _mediaItems.value
+        saveMediaCatalog()
         return item
     }
 
@@ -439,6 +696,7 @@ class VaultRepository(private val context: Context) {
                 }
                 srcFile.delete()
                 _mediaItems.value = _mediaItems.value.filter { it.id != mediaId }
+                saveMediaCatalog()
                 true
             } else {
                 false
@@ -473,28 +731,30 @@ class VaultRepository(private val context: Context) {
     }
 
     fun deleteMedia(id: String) {
-        _mediaItems.value = _mediaItems.value.map {
-            if (it.id == id) it.copy(isDeleted = true) else it
+        val item = _mediaItems.value.firstOrNull { it.id == id }
+        item?.localUri?.let { path ->
+            if (path.startsWith("/")) {
+                try {
+                    val f = File(path)
+                    if (f.exists()) f.delete()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
+        _mediaItems.value = _mediaItems.value.filter { it.id != id }
+        saveMediaCatalog()
     }
 
     fun restoreMedia(id: String) {
         _mediaItems.value = _mediaItems.value.map {
             if (it.id == id) it.copy(isDeleted = false) else it
         }
+        saveMediaCatalog()
     }
 
     fun permanentlyDeleteMedia(id: String) {
-        val item = _mediaItems.value.firstOrNull { it.id == id }
-        item?.localUri?.let { path ->
-            try {
-                val f = File(path)
-                if (f.exists()) f.delete()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        _mediaItems.value = _mediaItems.value.filter { it.id != id }
+        deleteMedia(id)
     }
 
     // Notes actions
@@ -521,16 +781,19 @@ class VaultRepository(private val context: Context) {
             )
             _notes.value = listOf(newNote) + _notes.value
         }
+        saveNotesCatalog()
     }
 
     fun deleteNote(id: String) {
         _notes.value = _notes.value.filter { it.id != id }
+        saveNotesCatalog()
     }
 
     fun toggleNotePin(id: String) {
         _notes.value = _notes.value.map {
             if (it.id == id) it.copy(isPinned = !it.isPinned) else it
         }
+        saveNotesCatalog()
     }
 
     // Helper methods for App categorization & theming
@@ -569,38 +832,95 @@ class VaultRepository(private val context: Context) {
     fun loadDeviceInstalledApps() {
         try {
             val pm = context.packageManager
+            val savedLocked = prefs.getStringSet("locked_packages", emptySet()) ?: emptySet()
+            val savedHidden = prefs.getStringSet("hidden_packages", emptySet()) ?: emptySet()
+            val appMap = mutableMapOf<String, LockableApp>()
+
+            // 1. Query launcher activities
             val intent = Intent(Intent.ACTION_MAIN, null).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
             }
-            val resolveInfos = pm.queryIntentActivities(intent, 0)
-            val savedLocked = prefs.getStringSet("locked_packages", emptySet()) ?: emptySet()
-            val savedHidden = prefs.getStringSet("hidden_packages", emptySet()) ?: emptySet()
+            val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+            } else {
+                pm.queryIntentActivities(intent, 0)
+            }
 
-            if (resolveInfos.isNotEmpty()) {
-                val realApps = resolveInfos.mapNotNull { ri ->
-                    val pkg = ri.activityInfo.packageName
-                    if (pkg == context.packageName) return@mapNotNull null
-                    val label = ri.loadLabel(pm).toString()
-                    val isLocked = savedLocked.contains(pkg)
-                    val isHidden = savedHidden.contains(pkg)
-                    val color = getAppColor(pkg)
-                    LockableApp(
-                        packageName = pkg,
-                        appName = label,
-                        category = getAppCategory(pkg, label),
-                        isLocked = isLocked,
-                        isHidden = isHidden,
-                        iconColor = color
-                    )
-                }.sortedBy { it.appName }
+            for (ri in resolveInfos) {
+                val pkg = ri.activityInfo.packageName
+                if (pkg == context.packageName) continue
+                val label = ri.loadLabel(pm).toString()
+                val isLocked = savedLocked.contains(pkg)
+                val isHidden = savedHidden.contains(pkg)
+                val color = getAppColor(pkg)
+                appMap[pkg] = LockableApp(
+                    packageName = pkg,
+                    appName = label,
+                    category = getAppCategory(pkg, label),
+                    isLocked = isLocked,
+                    isHidden = isHidden,
+                    iconColor = color
+                )
+            }
 
-                if (realApps.isNotEmpty()) {
-                    _lockedApps.value = realApps
+            // 2. Query all installed packages that have launch intents
+            try {
+                val installedApps = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+                } else {
+                    pm.getInstalledApplications(0)
                 }
+                for (appInfo in installedApps) {
+                    val pkg = appInfo.packageName
+                    if (pkg == context.packageName) continue
+                    if (!appMap.containsKey(pkg)) {
+                        val launchIntent = pm.getLaunchIntentForPackage(pkg)
+                        if (launchIntent != null) {
+                            val label = pm.getApplicationLabel(appInfo).toString()
+                            val color = getAppColor(pkg)
+                            val category = getAppCategory(pkg, label)
+                            appMap[pkg] = LockableApp(
+                                packageName = pkg,
+                                appName = label,
+                                category = category,
+                                isLocked = savedLocked.contains(pkg),
+                                isHidden = savedHidden.contains(pkg),
+                                iconColor = color
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            if (appMap.isNotEmpty()) {
+                _lockedApps.value = appMap.values.sortedBy { it.appName.lowercase() }
+            } else if (_lockedApps.value.isEmpty()) {
+                _lockedApps.value = getFallbackApps(savedLocked, savedHidden)
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            if (_lockedApps.value.isEmpty()) {
+                val savedLocked = prefs.getStringSet("locked_packages", emptySet()) ?: emptySet()
+                val savedHidden = prefs.getStringSet("hidden_packages", emptySet()) ?: emptySet()
+                _lockedApps.value = getFallbackApps(savedLocked, savedHidden)
+            }
         }
+    }
+
+    private fun getFallbackApps(savedLocked: Set<String>, savedHidden: Set<String>): List<LockableApp> {
+        return listOf(
+            LockableApp("com.whatsapp", "WhatsApp", "Social & Chat", isLocked = savedLocked.contains("com.whatsapp"), isHidden = savedHidden.contains("com.whatsapp"), iconColor = 0xFF25D366),
+            LockableApp("com.facebook.orca", "Messenger", "Social & Chat", isLocked = savedLocked.contains("com.facebook.orca"), isHidden = savedHidden.contains("com.facebook.orca"), iconColor = 0xFF0084FF),
+            LockableApp("com.instagram.android", "Instagram", "Social & Media", isLocked = savedLocked.contains("com.instagram.android"), isHidden = savedHidden.contains("com.instagram.android"), iconColor = 0xFFE1306C),
+            LockableApp("org.telegram.messenger", "Telegram", "Secure Chat", isLocked = savedLocked.contains("org.telegram.messenger"), isHidden = savedHidden.contains("org.telegram.messenger"), iconColor = 0xFF229ED9),
+            LockableApp("com.facebook.katana", "Facebook", "Social", isLocked = savedLocked.contains("com.facebook.katana"), isHidden = savedHidden.contains("com.facebook.katana"), iconColor = 0xFF1877F2),
+            LockableApp("com.google.android.apps.photos", "Google Photos", "Gallery", isLocked = savedLocked.contains("com.google.android.apps.photos"), isHidden = savedHidden.contains("com.google.android.apps.photos"), iconColor = 0xFFEA4335),
+            LockableApp("com.android.settings", "Settings", "System", isLocked = savedLocked.contains("com.android.settings"), isHidden = savedHidden.contains("com.android.settings"), iconColor = 0xFF607D8B),
+            LockableApp("com.zhiliaoapp.musically", "TikTok", "Entertainment", isLocked = savedLocked.contains("com.zhiliaoapp.musically"), isHidden = savedHidden.contains("com.zhiliaoapp.musically"), iconColor = 0xFF111827),
+            LockableApp("com.android.chrome", "Chrome Browser", "Browser", isLocked = savedLocked.contains("com.android.chrome"), isHidden = savedHidden.contains("com.android.chrome"), iconColor = 0xFF4285F4)
+        )
     }
 
     // App Lock & Hide Actions
@@ -649,14 +969,17 @@ class VaultRepository(private val context: Context) {
         )
         val filtered = _browserHistory.value.filter { it.url != url }
         _browserHistory.value = listOf(item) + filtered.take(50)
+        saveBrowserHistoryCatalog()
     }
 
     fun clearBrowserHistory() {
         _browserHistory.value = emptyList()
+        saveBrowserHistoryCatalog()
     }
 
     fun deleteBrowserHistoryItem(id: String) {
         _browserHistory.value = _browserHistory.value.filter { it.id != id }
+        saveBrowserHistoryCatalog()
     }
 
     // Download Actions
@@ -775,6 +1098,8 @@ class VaultRepository(private val context: Context) {
                 dateAdded = System.currentTimeMillis()
             )
             _mediaItems.value = listOf(savedMedia) + _mediaItems.value
+            saveMediaCatalog()
+            saveDownloadsCatalog()
         }
     }
 
@@ -791,10 +1116,13 @@ class VaultRepository(private val context: Context) {
             durationText = dl.durationText ?: "03:45"
         )
         _mediaItems.value = listOf(media) + _mediaItems.value
+        saveMediaCatalog()
+        saveDownloadsCatalog()
     }
 
     fun deleteDownload(id: String) {
         _downloads.value = _downloads.value.filter { it.id != id }
+        saveDownloadsCatalog()
     }
 
     // Subscription & Monetization Actions

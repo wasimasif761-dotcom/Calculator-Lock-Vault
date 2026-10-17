@@ -43,6 +43,10 @@ fun HideAppsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showDisguiseGuide by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        repository.loadDeviceInstalledApps()
+    }
+
     val hiddenApps = remember(apps) { apps.filter { it.isHidden } }
     val displayedApps = remember(apps, selectedTab, searchQuery) {
         val baseList = if (selectedTab == HideAppsTab.HIDDEN) hiddenApps else apps
@@ -70,6 +74,16 @@ fun HideAppsScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { repository.loadDeviceInstalledApps() },
+                        modifier = Modifier.testTag("refresh_installed_apps")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Scan Phone Apps",
+                            tint = Color(0xFF38BDF8)
+                        )
+                    }
                     IconButton(
                         onClick = { showDisguiseGuide = true },
                         modifier = Modifier.testTag("disguise_guide_button")
@@ -252,21 +266,12 @@ fun HideAppsScreen(
                                             }
                                         }
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = Color(app.iconColor),
-                                        modifier = Modifier.size(46.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = app.appName.take(1),
-                                                style = MaterialTheme.typography.titleMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White
-                                                )
-                                            )
-                                        }
-                                    }
+                                    AppIconView(
+                                        packageName = app.packageName,
+                                        fallbackName = app.appName,
+                                        fallbackColor = app.iconColor,
+                                        size = 46.dp
+                                    )
 
                                     Spacer(modifier = Modifier.width(12.dp))
 

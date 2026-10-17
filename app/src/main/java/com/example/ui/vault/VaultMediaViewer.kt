@@ -142,19 +142,13 @@ fun VaultVideoPlayer(
         AndroidView(
             factory = { ctx ->
                 VideoView(ctx).apply {
-                    val uri = when {
-                        media.localUri != null && File(media.localUri).exists() -> {
-                            Uri.fromFile(File(media.localUri))
-                        }
-                        media.localUri != null -> {
-                            Uri.parse(media.localUri)
-                        }
-                        else -> {
-                            Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")
-                        }
+                    if (media.localUri != null && File(media.localUri).exists()) {
+                        setVideoPath(media.localUri)
+                    } else if (media.localUri != null && media.localUri.isNotBlank()) {
+                        setVideoURI(Uri.parse(media.localUri))
+                    } else {
+                        setVideoURI(Uri.parse("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"))
                     }
-
-                    setVideoURI(uri)
                     setOnPreparedListener { mp ->
                         isBuffering = false
                         durationMs = mp.duration

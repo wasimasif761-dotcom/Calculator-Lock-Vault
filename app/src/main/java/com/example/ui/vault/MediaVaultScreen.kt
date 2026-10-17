@@ -32,7 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import android.media.MediaMetadataRetriever
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import coil.compose.AsyncImage
 import com.example.data.VaultRepository
 import com.example.model.MediaType
@@ -369,6 +371,22 @@ fun MediaVaultItemTile(
     item: VaultMedia,
     onClick: () -> Unit
 ) {
+    val videoThumbnail = remember(item.localUri) {
+        if (item.type == MediaType.VIDEO && item.localUri != null && item.localUri.startsWith("/")) {
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(item.localUri)
+                val bm = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                retriever.release()
+                bm?.asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
     Card(
         modifier = Modifier
             .aspectRatio(1f)
@@ -378,7 +396,30 @@ fun MediaVaultItemTile(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2432))
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (item.localUri != null) {
+            if (item.type == MediaType.VIDEO && videoThumbnail != null) {
+                Image(
+                    bitmap = videoThumbnail,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Surface(
+                    color = Color.Black.copy(alpha = 0.5f),
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .align(Alignment.Center)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            } else if (item.localUri != null && item.type == MediaType.PHOTO) {
                 AsyncImage(
                     model = if (item.localUri.startsWith("/")) File(item.localUri) else Uri.parse(item.localUri),
                     contentDescription = item.title,
